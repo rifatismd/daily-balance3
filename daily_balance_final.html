@@ -1,121 +1,63 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Daily Balance — ChE Student, RUET</title>
-<script>
-const GDRIVE_CLIENT_ID = '247285539126-6pbu6ogtpifr8a3qpt2fo7k1v27vu8u7.apps.googleusercontent.com';
-const GDRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
-let gdriveToken = null;
-
-function gdriveLogin(callback){
-  function doLogin(){
-    if(!window.google || !window.google.accounts){
-      showDriveMsg('❌ Google script not loaded. Check internet connection.');
-      return;
-    }
-    const client = google.accounts.oauth2.initTokenClient({
-      client_id: GDRIVE_CLIENT_ID,
-      scope: GDRIVE_SCOPE,
-      callback: (resp) => {
-        if(resp.error){ showDriveMsg('❌ Login failed: '+resp.error); return; }
-        gdriveToken = resp.access_token;
-        if(callback) callback();
-      }
-    });
-    client.requestAccessToken({prompt:'consent'});
-  }
-
-  // If Google script already loaded, use it
-  if(window.google && window.google.accounts){
-    doLogin(); return;
-  }
-  // Otherwise load it dynamically
-  showDriveMsg('⏳ Loading Google...');
-  const script = document.createElement('script');
-  script.src = 'https://accounts.google.com/gsi/client';
-  script.onload = ()=>{ setTimeout(doLogin, 500); };
-  script.onerror = ()=>{ showDriveMsg('❌ Could not load Google script. Check internet.'); };
-  document.head.appendChild(script);
-}
-
-async function backupToDrive(){
-  showDriveMsg('⏳ Connecting...');
-  gdriveLogin(async ()=>{
-    try{
-      const data = JSON.stringify({
-        settings:appSettings, extra:extraState,
-        done:doneState, cancelled:cancelledState,
-        exported: new Date().toISOString()
-      });
-      // Check if file exists
-      const searchRes = await fetch(
-        'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name%3D%22daily_balance_backup.json%22',
-        {headers:{Authorization:'Bearer '+gdriveToken}}
-      );
-      const searchData = await searchRes.json();
-      const fileId = searchData.files && searchData.files[0] ? searchData.files[0].id : null;
-
-      if(fileId){
-        // Update existing file
-        await fetch('https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media',{
-          method:'PATCH',
-          headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},
-          body: data
-        });
-      } else {
-        // Create new file
-        const meta = JSON.stringify({name:'daily_balance_backup.json',parents:['appDataFolder']});
-        const form = new FormData();
-        form.append('metadata', new Blob([meta],{type:'application/json'}));
-        form.append('file', new Blob([data],{type:'application/json'}));
-        await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{
-          method:'POST',
-          headers:{Authorization:'Bearer '+gdriveToken},
-          body: form
-        });
-      }
-      showDriveMsg('✅ Backed up to Drive!');
-    } catch(e){ showDriveMsg('❌ Backup failed: '+e.message); }
-  });
-}
-
-async function restoreFromDrive(){
-  showDriveMsg('⏳ Connecting...');
-  gdriveLogin(async ()=>{
-    try{
-      const searchRes = await fetch(
-        'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name%3D%22daily_balance_backup.json%22',
-        {headers:{Authorization:'Bearer '+gdriveToken}}
-      );
-      const searchData = await searchRes.json();
-      if(!searchData.files || !searchData.files[0]){
-        showDriveMsg('❌ No backup found in Drive!'); return;
-      }
-      const fileId = searchData.files[0].id;
-      const fileRes = await fetch(
-        'https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media',
-        {headers:{Authorization:'Bearer '+gdriveToken}}
-      );
-      const d = await fileRes.json();
-      if(d.extra){extraState=d.extra; saveExtra();}
-      if(d.done){doneState=d.done; saveState();}
-      if(d.cancelled){cancelledState=d.cancelled; saveCancelled();}
-      if(d.settings){appSettings=d.settings; saveSettings(appSettings);}
-      showDriveMsg('✅ Restored! Reloading...');
-      setTimeout(()=>location.reload(), 1200);
-    } catch(e){ showDriveMsg('❌ Restore failed: '+e.message); }
-  });
-}
-
-function showDriveMsg(msg){
-  const el = document.getElementById('driveSyncMsg');
-  if(el){ el.textContent=msg; el.style.display='block'; setTimeout(()=>el.style.display='none',4000); }
-}
-</script>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700&display=swap');
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Daily Balance</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+*{margin:0;padding:0;box-sizing:border-box;}
+    body{background:#080b10;font-family:'Inter',sans-serif;min-height:100vh;overflow-x:hidden;color:#e6edf8;}
+    .bg-grid{position:fixed;inset:0;background-image:linear-gradient(rgba(245,197,66,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(245,197,66,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;}
+    .bg-glow{position:fixed;width:400px;height:400px;border-radius:50%;filter:blur(120px);pointer-events:none;}
+    .bg-glow-1{background:#f5c54215;top:-100px;left:-100px;}
+    .bg-glow-2{background:#34d9c310;bottom:-100px;right:-100px;}
+    .wrap{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px 60px;}
+    .app-icon{width:72px;height:72px;background:linear-gradient(135deg,#1a1e10,#0f1a10);border:1px solid #f5c54240;border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:2rem;margin-bottom:20px;box-shadow:0 0 40px #f5c54220;}
+    .heading{font-family:'DM Serif Display',serif;font-size:3rem;font-weight:400;text-align:center;line-height:1;margin-bottom:8px;}
+    .heading em{font-style:italic;color:#f5c542;}
+    .sub{font-size:0.78rem;color:#3a4a60;text-align:center;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:36px;}
+    .stats{display:flex;gap:0;margin-bottom:36px;background:#0d1018;border:1px solid #1c2535;border-radius:14px;overflow:hidden;max-width:320px;width:100%;}
+    .stat{flex:1;text-align:center;padding:14px 8px;}
+    .stat+.stat{border-left:1px solid #1c2535;}
+    .stat-num{font-family:'DM Serif Display',serif;font-size:1.4rem;font-weight:400;color:#f5c542;}
+    .stat-lbl{font-size:0.6rem;color:#3a4a60;text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;}
+    .card{width:100%;max-width:320px;background:#0d1018;border:1px solid #1c2535;border-radius:18px;padding:24px 22px;margin-bottom:16px;}
+    .card-title{font-size:0.7rem;color:#3a4a60;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:16px;text-align:center;}
+    .google-btn{width:100%;padding:14px 20px;background:#fff;border:none;border-radius:12px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;font-family:'Inter',sans-serif;font-size:0.88rem;font-weight:600;color:#1a1a1a;transition:all 0.18s;margin-bottom:12px;}
+    .google-btn:hover{background:#f0f0f0;transform:translateY(-1px);}
+    .divider-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+    .divider-line{flex:1;height:1px;background:#1c2535;}
+    .divider-text{font-size:0.68rem;color:#3a4a60;}
+    .guest-btn{width:100%;padding:13px 20px;background:transparent;border:1px solid #1c2535;border-radius:12px;color:#5e728c;font-family:'Inter',sans-serif;font-size:0.85rem;font-weight:500;cursor:pointer;transition:all 0.18s;display:flex;align-items:center;justify-content:center;gap:8px;}
+    .guest-btn:hover{border-color:#34d9c3;color:#34d9c3;}
+    .terms-note{font-size:0.64rem;color:#2a3a50;text-align:center;margin-top:14px;line-height:1.7;}
+    .terms-note a{color:#3a5a70;text-decoration:underline;}
+    .terms-note a:hover{color:#f5c542;}
+    .features{display:flex;gap:8px;max-width:320px;width:100%;overflow-x:auto;scrollbar-width:none;padding-bottom:4px;}
+    .features::-webkit-scrollbar{display:none;}
+    .feat{flex-shrink:0;background:#0d1018;border:1px solid #1c2535;border-radius:10px;padding:10px 12px;text-align:center;min-width:76px;}
+    .feat-icon{font-size:1.2rem;display:block;margin-bottom:4px;}
+    .feat-name{font-size:0.6rem;color:#3a4a60;font-weight:500;}
+    .footer{margin-top:28px;font-size:0.65rem;color:#1a2535;text-align:center;line-height:2;}
+    .footer a{color:#2a3a50;text-decoration:none;margin:0 6px;}
+    .footer a:hover{color:#f5c542;}
+    .loading{display:none;position:fixed;inset:0;background:#080b10cc;backdrop-filter:blur(8px);z-index:100;align-items:center;justify-content:center;flex-direction:column;gap:16px;}
+    .loading.show{display:flex;}
+    .spinner{width:40px;height:40px;border-radius:50%;border:3px solid #1c2535;border-top-color:#f5c542;animation:spin 0.8s linear infinite;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .loading-text{font-size:0.82rem;color:#5e728c;}
+    /* Returning user banner */
+    .return-banner{display:none;width:100%;max-width:320px;background:linear-gradient(135deg,#0d1a0d,#0d180d);border:1px solid #1a3a1a;border-radius:14px;padding:16px 18px;margin-bottom:16px;align-items:center;gap:12px;}
+    .return-banner.show{display:flex;}
+    .return-avatar{width:40px;height:40px;border-radius:50%;border:2px solid #f5c54240;object-fit:cover;}
+    .return-avatar-placeholder{width:40px;height:40px;border-radius:50%;background:#1a2a1a;border:2px solid #f5c54240;display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0;}
+    .return-info{flex:1;}
+    .return-name{font-size:0.88rem;font-weight:600;color:#e6edf8;margin-bottom:2px;}
+    .return-sub{font-size:0.68rem;color:#3a5a3a;}
+    .return-btn{background:#f5c542;border:none;color:#0a0905;border-radius:8px;padding:8px 14px;cursor:pointer;font-family:'Inter',sans-serif;font-size:0.78rem;font-weight:700;flex-shrink:0;}
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700&display=swap');
   :root {
     --bg:#080b10;--surface:#0e1219;--surface2:#141b25;--border:#1c2535;--border2:#243048;
     --accent:#f5c542;--accent2:#34d9c3;--warn:#fb923c;--rose:#f87171;
@@ -581,14 +523,37 @@ function showDriveMsg(msg){
   .toggle-slider:before{content:'';position:absolute;width:16px;height:16px;left:3px;top:3px;background:var(--muted);border-radius:50%;transition:0.25s;}
   input:checked+.toggle-slider{background:var(--accent);}
   input:checked+.toggle-slider:before{transform:translateX(18px);background:#0a0905;}
-</style>
+.page{display:none!important;}.page.active{display:block!important;}
+#landingPage.active{display:flex!important;flex-direction:column;align-items:center;justify-content:center;}
+.legal-wrap{max-width:700px;margin:0 auto;padding:24px 20px 60px;background:#0a0b0f;color:#e0e6f0;line-height:1.7;min-height:100vh;}
+.legal-h1{font-size:1.6rem;color:#f5c542;margin-bottom:4px;}.legal-h2{font-size:1rem;color:#f5c542;margin-top:28px;margin-bottom:6px;}
+.legal-wrap p,.legal-wrap li{font-size:0.9rem;color:#b0bcd0;}.legal-wrap ul{padding-left:20px;}
+.legal-date{font-size:0.78rem;color:#5a6a80;margin-bottom:28px;}.legal-wrap a{color:#34d9c3;}
+.legal-card{background:#12151e;border:1px solid #1e2535;border-radius:12px;padding:16px 20px;margin-bottom:16px;}
+.legal-back{display:inline-flex;align-items:center;gap:6px;background:#12151e;border:1px solid #1e2535;border-radius:8px;padding:8px 14px;color:#5e728c;font-size:0.8rem;cursor:pointer;margin-bottom:24px;font-family:"Inter",sans-serif;}
+.legal-back:hover{color:#f5c542;border-color:#f5c542;}
+  </style>
 </head>
 <body>
 
+<div id="appPage" class="page active" style="background:var(--bg,#080b10);">
 <header>
-  <div style="display:flex;align-items:flex-end;justify-content:space-between;">
+  <div style="display:flex;align-items:center;justify-content:space-between;">
     <h1>Daily <em>Balance</em></h1>
-    <div class="live-clock" id="liveClock">--:--</div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="live-clock" id="liveClock">--:--</div>
+      <div id="userAvatar" style="display:none;cursor:pointer;" onclick="showUserMenu()" title="Account">
+        <div id="userAvatarInner" style="width:32px;height:32px;border-radius:50%;background:var(--surface2);border:1.5px solid var(--accent);display:flex;align-items:center;justify-content:center;font-size:0.9rem;overflow:hidden;"></div>
+      </div>
+    </div>
+  </div>
+  <div id="userGreeting" style="display:none;font-size:0.72rem;color:var(--muted);margin-top:4px;"></div>
+  <!-- User menu -->
+  <div id="userMenu" style="display:none;position:absolute;top:70px;right:16px;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px;z-index:200;min-width:200px;box-shadow:0 8px 32px #00000060;">
+    <div id="userMenuName" style="font-size:0.85rem;font-weight:600;color:var(--text);margin-bottom:2px;"></div>
+    <div id="userMenuEmail" style="font-size:0.7rem;color:var(--muted);margin-bottom:12px;"></div>
+    <button onclick="signOut()" style="width:100%;background:transparent;border:1px solid #7a2020;color:#f87171;border-radius:8px;padding:8px;cursor:pointer;font-family:'Inter',sans-serif;font-size:0.8rem;">Sign Out</button>
+    <button onclick="document.getElementById('userMenu').style.display='none'" style="width:100%;background:transparent;border:none;color:var(--muted);padding:6px;cursor:pointer;font-family:'Inter',sans-serif;font-size:0.75rem;margin-top:4px;">Close</button>
   </div>
 </header>
 
@@ -1132,8 +1097,7 @@ function showDriveMsg(msg){
       <button onclick="restoreFromDrive()" style="flex:1;min-width:110px;background:#0f1a2a;border:1px solid #1a2a4a;color:#60a5fa;border-radius:9px;padding:10px 8px;cursor:pointer;font-family:'Inter',sans-serif;font-size:0.8rem;font-weight:600;">☁️ Drive Restore</button>
     </div>
     <div id="driveSyncMsg" style="display:none;margin-top:8px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;font-size:0.82rem;color:var(--text);text-align:center;"></div>
-      <input type="file" id="importFileInput" accept=".json" onchange="importData(event)" style="display:none;" />
-    </div>
+    <input type="file" id="importFileInput" accept=".json" onchange="importData(event)" style="display:none;" />
 
     <!-- Auto backup reminder toggle -->
     <div class="setting-row">
@@ -1146,18 +1110,70 @@ function showDriveMsg(msg){
   </div>
 
   <!-- ═══ ABOUT ═══ -->
-  <div class="settings-card" style="margin-bottom:8px;">
-    <div class="settings-section-title">ℹ️ About</div>
-    <div style="font-size:0.78rem;color:var(--muted);line-height:1.7;">
-      <strong style="color:var(--text);">Daily Balance</strong> — offline single-file app<br>
-      All data stored locally in your browser.<br>
-      No internet needed after download.
+  <div style="background:linear-gradient(135deg,var(--surface2),var(--surface));border:1px solid var(--border);border-radius:16px;padding:20px 18px;margin-bottom:8px;text-align:center;position:relative;overflow:hidden;">
+    <div style="position:absolute;top:-30px;right:-30px;width:100px;height:100px;background:radial-gradient(circle,#f5c54215,transparent 70%);"></div>
+    <div style="font-size:1.8rem;margin-bottom:8px;">📋</div>
+    <div style="font-family:'DM Serif Display',serif;font-size:1.1rem;color:var(--text);margin-bottom:4px;">Daily <em style="color:var(--accent);font-style:italic;">Balance</em></div>
+    <div style="font-size:0.68rem;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:14px;">Version 1.0 · Offline-First</div>
+    <div style="display:flex;justify-content:center;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
+      <span style="background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:4px 10px;font-size:0.66rem;color:var(--muted);">🔒 Private</span>
+      <span style="background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:4px 10px;font-size:0.66rem;color:var(--muted);">⚡ Offline</span>
+      <span style="background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:4px 10px;font-size:0.66rem;color:var(--muted);">∞ Free</span>
+    </div>
+    <div style="font-size:0.74rem;color:var(--muted);line-height:1.6;border-top:1px solid var(--border);padding-top:12px;">
+      All your data stays on this device — nothing is sent to any server.<br>Built for focus, growth, and a balanced routine.
     </div>
   </div>
 
 </div>
 
 <script>
+function getUserKey(base){
+  try{
+    var u=JSON.parse(localStorage.getItem('db_user')||'null');
+    if(u&&u.email&&u.authType==='google') return base+'_'+u.email.replace(/[^a-z0-9]/gi,'_');
+  }catch(e){}
+  return base+'_guest';
+}
+
+function getUserData() {
+  try { return JSON.parse(localStorage.getItem('db_user')||'null'); } catch(e) { return null; }
+}
+function initUserGreeting() {
+  try {
+    var user=getUserData(); if(!user) return;
+    var avatarEl=document.getElementById('userAvatar');
+    var avatarInner=document.getElementById('userAvatarInner');
+    if(avatarEl&&avatarInner) {
+      avatarEl.style.display='block';
+      if(user.photo&&user.authType==='google') avatarInner.innerHTML='<img src="'+user.photo+'" style="width:100%;height:100%;object-fit:cover;" />';
+      else avatarInner.textContent=user.name?user.name[0].toUpperCase():'?';
+    }
+    var greetEl=document.getElementById('userGreeting');
+    if(greetEl) {
+      var h=new Date().getHours();
+      var g=h<12?'Good morning':h<17?'Good afternoon':'Good evening';
+      greetEl.textContent=g+', '+(user.name?user.name.split(' ')[0]:'there')+' \u{1F44B}';
+      greetEl.style.display='block';
+    }
+    var mn=document.getElementById('userMenuName'); if(mn) mn.textContent=user.name||'User';
+    var me=document.getElementById('userMenuEmail'); if(me) me.textContent=user.email||(user.authType==='guest'?'Guest mode':'');
+  } catch(e) {}
+}
+function showUserMenu(){ var m=document.getElementById('userMenu'); if(m) m.style.display=m.style.display==='none'?'block':'none'; }
+function signOut() {
+  if(confirm('Sign out? Your local data will stay saved.')) {
+    localStorage.removeItem('db_user'); sessionStorage.removeItem('gdrive_token');
+    sessionStorage.removeItem('_goto_app');
+    window.location.href = 'index.html';
+  }
+}
+document.addEventListener('click',function(e){
+  var menu=document.getElementById('userMenu'); var avatar=document.getElementById('userAvatar');
+  if(menu&&avatar&&!menu.contains(e.target)&&!avatar.contains(e.target)) menu.style.display='none';
+});
+window.addEventListener('DOMContentLoaded', function(){ initUserGreeting(); });
+
 const DAYS_OF_WEEK_BASE = ['Sat','Sun','Mon','Tue','Wed','Thu','Fri'];
 function getDaysOfWeek(){
   const start = appSettings.weekStart||'Fri';
@@ -1388,16 +1404,16 @@ function buildDay(dayName) {
 }
 
 // STATE
-function loadState(){try{return JSON.parse(localStorage.getItem('ruet_done')||'{}');}catch(e){return {};}}
-function saveState(){try{localStorage.setItem('ruet_done',JSON.stringify(doneState));}catch(e){}}
-let doneState=loadState();
-function loadCancelled(){try{return JSON.parse(localStorage.getItem('ruet_cancelled')||'{}');}catch(e){return {};}}
-function saveCancelled(){try{localStorage.setItem('ruet_cancelled',JSON.stringify(cancelledState));}catch(e){}}
-let cancelledState=loadCancelled();
+function loadState(){try{return JSON.parse(localStorage.getItem(getUserKey('voice_done'))||'{}');}catch(e){return {};}}
+function saveState(){try{localStorage.setItem(getUserKey('voice_done'),JSON.stringify(doneState));}catch(e){}}
+let doneState={};
+function loadCancelled(){try{return JSON.parse(localStorage.getItem(getUserKey('voice_cancelled'))||'{}');}catch(e){return {};}}
+function saveCancelled(){try{localStorage.setItem(getUserKey('voice_cancelled'),JSON.stringify(cancelledState));}catch(e){}}
+let cancelledState={};
 
-function loadExtra(){try{return JSON.parse(localStorage.getItem('ruet_extra')||'{}');}catch(e){return {};}}
-function saveExtra(){try{localStorage.setItem('ruet_extra',JSON.stringify(extraState));}catch(e){}}
-let extraState=loadExtra();
+function loadExtra(){try{return JSON.parse(localStorage.getItem(getUserKey('voice_extra'))||'{}');}catch(e){return {};}}
+function saveExtra(){try{localStorage.setItem(getUserKey('voice_extra'),JSON.stringify(extraState));}catch(e){}}
+let extraState={};
 
 function initWater(){
   const dk=getActiveDK(),count=extraState['water_'+dk]||0;
@@ -2225,9 +2241,9 @@ const DASHBOARD_OPTIONS = [
   {id:'dashPomo',   label:'Pomodoro Widget', sub:'Mini timer on daily view',  def:false},
 ];
 
-function loadSettings(){ try{return JSON.parse(localStorage.getItem('ruet_settings')||'{}')}catch(e){return {};} }
-function saveSettings(s){ localStorage.setItem('ruet_settings',JSON.stringify(s)); }
-let appSettings = loadSettings();
+function loadSettings(){ try{return JSON.parse(localStorage.getItem(getUserKey('voice_settings'))||'{}')}catch(e){return {};} }
+function saveSettings(s){ localStorage.setItem(getUserKey('voice_settings'),JSON.stringify(s)); }
+let appSettings = {};
 
 function getTabVisible(id){ return appSettings['tab_'+id]!==false; }
 function getDailyOpt(id){ const o=DAILY_OPTIONS.find(x=>x.id===id); return appSettings[id]!==false&&(o?o.def:true); }
@@ -3144,7 +3160,6 @@ function renderModalTracker(){
 
   <div id="notesList"></div>
 </div>
-
 <!-- SLOT MANAGER TAB -->
 <div id="slotsView" class="view-panel" style="display:none;">
   <div style="font-family:'DM Serif Display',serif;font-size:1.1rem;font-weight:400;margin-bottom:14px;">⚙️ Slot Manager</div>
@@ -3228,8 +3243,6 @@ function renderModalTracker(){
 
   <div id="customSlotList"></div>
 
-
 </div>
-
 </body>
 </html>
